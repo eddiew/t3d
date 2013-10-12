@@ -2,6 +2,7 @@ package com.eddiew.t3d.ogl;
 
 import android.opengl.GLES20;
 import android.opengl.Matrix;
+import android.util.Log;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -31,7 +32,7 @@ public class GLObject {
         "varying vec4 vColor;" +
         "void main() {" +
         "   vColor = aColor;" +
-        "   gl_Position = uMBPMatrix*aPosition;" +
+        "   gl_Position = uMVPMatrix*aPosition;" +
         "}";
 
     String fragmentShaderCode =
@@ -88,7 +89,38 @@ public class GLObject {
         int shader = GLES20.glCreateShader(type);
         GLES20.glShaderSource(shader,shaderCode);
         GLES20.glCompileShader(shader);
+
+        // Get the compilation status.
+        final int[] compileStatus = new int[1];
+        GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compileStatus, 0);
+
+        // If the compilation failed, delete the shader.
+        if (compileStatus[0] == 0)
+        {
+            throw new RuntimeException("Error compiling shader\n" + shaderCode);
+        }
+
         return shader;
+    }
+
+    /**
+     * Utility method for debugging OpenGL calls. Provide the name of the call
+     * just after making it:
+     *
+     * <pre>
+     * mColorHandle = GLES20.glGetUniformLocation(mProgram, "vColor");
+     * MyGLRenderer.checkGlError("glGetUniformLocation");</pre>
+     *
+     * If the operation is not successful, the check throws an error.
+     *
+     * @param glOperation - Name of the OpenGL call to check.
+     */
+    public static void checkGlError(String glOperation) {
+        int error;
+        while ((error = GLES20.glGetError()) != GLES20.GL_NO_ERROR) {
+            Log.e("GLObject", glOperation + ": glError " + error);
+            throw new RuntimeException(glOperation + ": glError " + error);
+        }
     }
 
     public void draw(float[] viewMatrix, float[] projectionMatrix){
@@ -97,22 +129,24 @@ public class GLObject {
 
         //position info
         int positionHandle = GLES20.glGetAttribLocation(glProgram, "aPosition");
-        GLES20.glVertexAttribPointer(positionHandle, positionValues, GLES20.GL_FLOAT, false, strideBytes, vertexBuffer);
+        GLES20.glVertexAttribPointer(positionHandle, positionValues, GLES20.GL_FLOAT, false, strideBytes, vertexBuffer.position(0));
         GLES20.glEnableVertexAttribArray(positionHandle);
 
         //color info
         int colorHandle = GLES20.glGetAttribLocation(glProgram, "aColor");
-        GLES20.glVertexAttribPointer(colorHandle, colorValues, GLES20.GL_FLOAT, false, strideBytes, vertexBuffer);
+        GLES20.glVertexAttribPointer(colorHandle, colorValues, GLES20.GL_FLOAT, false, strideBytes, vertexBuffer.position(positionValues));
         GLES20.glEnableVertexAttribArray(colorHandle);
 
         //matrix transformations
         int matrixHandle = GLES20.glGetUniformLocation(glProgram, "uMVPMatrix");
+        checkGlError("glGetUniformLocation");
         Matrix.multiplyMM(mvpMatrix, 0, viewMatrix, 0, modelMatrix, 0);
-        Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, mvpMatrix, 0);
+        Matrix.multiplyMM(mvpMatrix, 0, mvpMatrix, 0, projectionMatrix, 0);
         GLES20.glUniformMatrix4fv(matrixHandle, 1, false, mvpMatrix, 0);
+        checkGlError("glUniformMatrix4fv");
 
         //finally draw the damn thing
-        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, vertexBuffer.capacity()/7);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, drawListBuffer.capacity());
         GLES20.glDisableVertexAttribArray(positionHandle);
     }
 }

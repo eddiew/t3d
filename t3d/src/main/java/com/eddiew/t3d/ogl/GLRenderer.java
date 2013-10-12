@@ -35,7 +35,7 @@ public class GLRenderer implements GLSurfaceView.Renderer {
         final float ratio = (float) width / height;
         final float left = -ratio, right = ratio;
         final float bottom = -1.0f, top = 1.0f;
-        final float near = 1.0f, far = 10.0f;
+        final float near = 1.0f, far = 1000.0f;
         Matrix.frustumM(projectionMatrix, 0, left, right, bottom, top, near, far);
     }
 
