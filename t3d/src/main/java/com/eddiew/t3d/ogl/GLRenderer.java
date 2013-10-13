@@ -5,6 +5,8 @@ import android.opengl.GLSurfaceView;
 import android.opengl.Matrix;
 import android.util.Log;
 
+import com.eddiew.t3d.ObjectData;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
@@ -50,6 +52,7 @@ public class GLRenderer implements GLSurfaceView.Renderer {
 //        }, new short[]{
 //                0, 1, 2
 //        }, modelMatrix);
+
     }
 
     @Override
@@ -139,19 +142,6 @@ public class GLRenderer implements GLSurfaceView.Renderer {
 
     GLObject getGLObjectById(int id){
         return glObjects.get(id);
-    }
-}
-
-class ObjectData{
-    float[] vertexData;
-    short[] drawOrder;
-    float[] modelMatrix;
-    final int objectId;
-    ObjectData(float[] vertexData, short[] drawOrder, float[] modelMatrix, int objectId){
-        this.vertexData = vertexData;
-        this.drawOrder = drawOrder;
-        this.modelMatrix = modelMatrix;
-        this.objectId = objectId;
     }
 }
 

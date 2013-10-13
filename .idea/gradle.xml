@@ -3,8 +3,7 @@
   <component name="GradleSettings">
     <option name="linkedExternalProjectsSettings">
       <GradleProjectSettings>
-        <option name="distributionType" value="DEFAULT_WRAPPED" />
-        <option name="externalProjectPath" value="C:\Users\Eddie\AndroidStudioProjects\t3dProject" />
+        <option name="externalProjectPath" value="C:\Users\Eddie" />
         <option name="useAutoImport" value="true" />
       </GradleProjectSettings>
     </option>

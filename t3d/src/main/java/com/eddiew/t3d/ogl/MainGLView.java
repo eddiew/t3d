@@ -7,7 +7,7 @@ import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 
-import java.util.ArrayList;
+import com.eddiew.t3d.ObjectData;
 
 /**
  * Contains the touch instructions for the main GLSurfaceView
@@ -31,30 +31,64 @@ public class MainGLView extends GLSurfaceView {
             public void run() {
                 renderer.rawData.add(new ObjectData(
                         new float[]{
-                                0f, 0.622008459f, 0,
+                                1f, 1f, 1,
                                 1, 0, 0, 1,
 
-                                -0.5f, -0.311004243f, 0,
+                                -1f, 1f, 1,
                                 0, 1, 0, 1,
 
-                                0.5f, -0.311004243f, 0,
-                                0, 0, 1, 1
+                                -1f, -1f, 1,
+                                0, 0, 1, 1,
+
+                                1f,-1f,1,
+                                1,1,0,1,
+
+                                1f, 1f, -1f,
+                                1,0,1,1,
+
+                                -1f,1f,-1f,
+                                0,1,1,1,
+
+                                -1f,-1f,-1f,
+                                1,1,1,1,
+
+                                1f,-1f,-1f,
+                                0,0,0,1
                         },
                         new short[]{
-                                0, 1, 2
+                                0,4,5,
+                                0,5,1,
+                                1,5,6,
+                                1,6,2,
+                                0,1,2,
+                                0,2,3,
+                                4,0,3,
+                                4,3,7,
+                                5,4,7,
+                                5,7,6,
+                                6,7,3,
+                                6,3,2
                         },
                         modelMatrix,
                         0));
-//                while(renderer != null){
-//                    long time = (SystemClock.uptimeMillis() % 4000);
-//                    float angle = 0.009f * time;
-//                    double disp = Math.sin(angle);
-////                    Matrix.setIdentityM(renderer.getGLObjectById(0).modelMatrix,0);
-////                    Matrix.rotateM(renderer.getGLObjectById(0).modelMatrix,0, angle, 0, 1, 0);
-////                    Matrix.translateM(renderer.getGLObjectById(0).modelMatrix, 0, 0, (float)disp,0);
-//                }
             }
         });
+        new Runnable(){
+
+            @Override
+            public void run() {
+                while(renderer != null){
+                    long time = (SystemClock.uptimeMillis() % 4000);
+                    float angle = 0.009f * time;
+                    double disp = Math.sin(angle);
+                    float[] mMatrix = new float[16];
+                    Matrix.setIdentityM(mMatrix,0);
+                    Matrix.rotateM(mMatrix,0, angle, 0, 1, 0);
+                    Matrix.translateM(mMatrix, 0, 0, (float)disp,0);
+                    renderer.getGLObjectById(0).modelMatrix = mMatrix;
+                }
+            }
+        }.run();
     }
     @Override
     public boolean onTouchEvent(MotionEvent event){
