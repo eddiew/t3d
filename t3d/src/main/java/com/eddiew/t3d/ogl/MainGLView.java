@@ -1,6 +1,7 @@
 package com.eddiew.t3d.ogl;
 
 import android.content.Context;
+import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.Matrix;
 import android.os.SystemClock;
@@ -15,7 +16,7 @@ import java.util.ArrayList;
  */
 public class MainGLView extends GLSurfaceView {
 
-    GLRenderer renderer;
+    final GLRenderer renderer;
 
     public MainGLView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -29,32 +30,149 @@ public class MainGLView extends GLSurfaceView {
         queueEvent(new Runnable() {
             @Override
             public void run() {
-                renderer.rawData.add(new ObjectData(
-                        new float[]{
-                                0f, 0.622008459f, 0,
-                                1, 0, 0, 1,
+                renderer.modelMatrices.put(0,modelMatrix);
+                renderer.rawData.add(new ObjectData( new float[]{
+                        //Front Face
+                        1,1,1,
+                        0,0,1,
+                        1,0,0,1,
 
-                                -0.5f, -0.311004243f, 0,
-                                0, 1, 0, 1,
+                        -1,1,1,
+                        0,0,1,
+                        1,0,0,1,
 
-                                0.5f, -0.311004243f, 0,
-                                0, 0, 1, 1
-                        },
-                        new short[]{
-                                0, 1, 2
-                        },
-                        modelMatrix,
+                        -1,-1,1,
+                        0,0,1,
+                        1,0,0,1,
+
+                        1,-1,1,
+                        0,0,1,
+                        1,0,0,1,
+                        //Top Face
+                        1,1,-1,
+                        0,1,0,
+                        0,1,0,1,
+
+                        -1,1,-1,
+                        0,1,0,
+                        0,1,0,1,
+
+                        -1,1,1,
+                        0,1,0,
+                        0,1,0,1,
+
+                        1,1,1,
+                        0,1,0,
+                        0,1,0,1,
+                        //Right Face
+                        1,1,-1,
+                        1,0,0,
+                        0,0,1,1,
+
+                        1,1,1,
+                        1,0,0,
+                        0,0,1,1,
+
+                        1,-1,1,
+                        1,0,0,
+                        0,0,1,1,
+
+                        1,-1,-1,
+                        1,0,0,
+                        0,0,1,1,
+                        //Back Face
+                        -1,1,-1,
+                        0,0,-1,
+                        1,1,0,1,
+
+                        1,1,-1,
+                        0,0,-1,
+                        1,1,0,1,
+
+                        1,-1,-1,
+                        0,0,-1,
+                        1,1,0,1,
+
+                        -1,-1,-1,
+                        0,0,-1,
+                        1,1,0,1,
+                        //Left Face
+                        -1,1,1,
+                        -1,0,0,
+                        1,0,1,1,
+
+                        -1,1,-1,
+                        -1,0,0,
+                        1,0,1,1,
+
+                        -1,-1,-1,
+                        -1,0,0,
+                        1,0,1,1,
+
+                        -1,-1,1,
+                        -1,0,0,
+                        1,0,1,1,
+                        //Bottom Face
+                        1,-1,1,
+                        0,-1,0,
+                        0,1,1,1,
+
+                        -1,-1,1,
+                        0,-1,0,
+                        0,1,1,1,
+
+                        -1,-1,-1,
+                        0,-1,0,
+                        0,1,1,1,
+
+                        1,-1,-1,
+                        0,-1,0,
+                        0,1,1,1,
+                        }, new short[]{
+                        0,1,2,
+                        0,2,3,
+                        4,5,6,
+                        4,6,7,
+                        8,9,10,
+                        8,10,11,
+                        12,13,14,
+                        12,14,15,
+                        16,17,18,
+                        16,18,19,
+                        20,21,22,
+                        20,22,23,
+//                                2,3,1,// For GL_TRIANGLE_STRIP. What sorcery is this...
+//                                0,
+//                                4,
+//                                3,
+//                                7,
+//                                6,
+//                                4,
+//                                5,
+//                                1,
+//                                6,
+//                                2,
+//                                3,
+                        }, GLES20.GL_TRIANGLES,
                         0));
-//                while(renderer != null){
-//                    long time = (SystemClock.uptimeMillis() % 4000);
-//                    float angle = 0.009f * time;
-//                    double disp = Math.sin(angle);
-////                    Matrix.setIdentityM(renderer.getGLObjectById(0).modelMatrix,0);
-////                    Matrix.rotateM(renderer.getGLObjectById(0).modelMatrix,0, angle, 0, 1, 0);
-////                    Matrix.translateM(renderer.getGLObjectById(0).modelMatrix, 0, 0, (float)disp,0);
-//                }
             }
         });
+        // "Physics"
+        new Thread(new Runnable(){
+            @Override
+            public void run() {
+                while(renderer != null){
+                    long time = (SystemClock.uptimeMillis() % 9000);
+                    float angle = 0.04f * time;
+                    double disp = Math.sin(Math.toRadians(2*angle))/4;
+                    final float[] mMatrix = new float[16];
+                    Matrix.setIdentityM(mMatrix, 0);
+                    Matrix.translateM(mMatrix, 0, 0, (float) disp, 0);
+                    Matrix.rotateM(mMatrix, 0, angle, 0, 1, 0);
+                    renderer.modelMatrices.put(0, mMatrix);
+                }
+            }
+        }).start();
     }
     @Override
     public boolean onTouchEvent(MotionEvent event){

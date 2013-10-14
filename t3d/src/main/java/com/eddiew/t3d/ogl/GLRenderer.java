@@ -20,18 +20,20 @@ import javax.microedition.khronos.opengles.GL10;
  */
 public class GLRenderer implements GLSurfaceView.Renderer {
 
-    float[] viewMatrix = new float[16];
-    float[] projectionMatrix = new float[16];
-    float[] vpMatrix = new float[16];
-    volatile public HashMap<Integer,GLObject> glObjects = new HashMap<Integer,GLObject>();
+    volatile public float[] viewMatrix = new float[16];
+    volatile public float[] projectionMatrix = new float[16];
+    private HashMap<Integer,GLObject> glObjects = new HashMap<Integer,GLObject>();
+    volatile public HashMap<Integer, float[]> modelMatrices = new HashMap<Integer, float[]>();
     volatile public ArrayList<ObjectData> rawData = new ArrayList<ObjectData>();
 
     @Override
     public void onSurfaceCreated(GL10 gl10, EGLConfig eglConfig) {
+        GLES20.glEnable(GLES20.GL_CULL_FACE);
+        GLES20.glEnable(GLES20.GL_DEPTH_TEST);
         // Set the background frame color
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         //initialize view matrix
-        final float camX = 0f, camY = 0f, camZ = -3f;
+        final float camX = 0f, camY = 2f, camZ = 3f;
         final float lookX = 0f, lookY = 0f, lookZ = 0f;
         final float upX = 0f, upY = 1f, upZ = 0f;
         Matrix.setLookAtM(viewMatrix, 0, camX, camY, camZ, lookX, lookY, lookZ, upX, upY, upZ);
@@ -59,22 +61,24 @@ public class GLRenderer implements GLSurfaceView.Renderer {
         final float ratio = (float) width / height;
         final float left = -ratio, right = ratio;
         final float bottom = -1.0f, top = 1.0f;
-        final float near = 3f, far = 7f;
+        final float near = 1, far = 10;
         Matrix.frustumM(projectionMatrix, 0, left, right, bottom, top, near, far);
     }
 
     @Override
     public void onDrawFrame(GL10 gl10) {
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
         if(!rawData.isEmpty()){
             processRawData();
             rawData.clear();
         }
         // Redraw background color
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
-        Matrix.multiplyMM(vpMatrix, 0, projectionMatrix, 0, viewMatrix, 0);
+//        float[] vpMatrix = new float[16];
+//        Matrix.multiplyMM(vpMatrix, 0, projectionMatrix, 0, viewMatrix, 0);
 
         for(GLObject o : glObjects.values()){
-            o.draw(vpMatrix);
+            o.draw(viewMatrix, projectionMatrix);
         }
     }
 
@@ -125,15 +129,13 @@ public class GLRenderer implements GLSurfaceView.Renderer {
         }
     }
 
-    public void addObject(float[] vertexData, short[] drawOrder, float[] modelMatrix, int objectId){
-        glObjects.put(objectId,new GLObject(vertexData,drawOrder,modelMatrix, objectId));
+    public void addObject(final float[] vertexData, final short[] drawOrder, final int drawMode, final int objectId){
+        glObjects.put(objectId,new GLObject(vertexData,drawOrder, this, drawMode, objectId));
     }
-    public void addObject(GLObject o){
-        glObjects.put(o.objectId,o);
-    }
+    // This probably isn't necessary. TODO: Figure out a better way to update the world from another thread
     void processRawData(){
         for(ObjectData o : rawData){
-            addObject(o.vertexData, o.drawOrder, o.modelMatrix, o.objectId);
+            addObject(o.vertexData, o.drawOrder, o.drawMode, o.objectId);
         }
     }
 
@@ -143,32 +145,32 @@ public class GLRenderer implements GLSurfaceView.Renderer {
 }
 
 class ObjectData{
-    float[] vertexData;
-    short[] drawOrder;
-    float[] modelMatrix;
+    final float[] vertexData;
+    final short[] drawOrder;
     final int objectId;
-    ObjectData(float[] vertexData, short[] drawOrder, float[] modelMatrix, int objectId){
+    final int drawMode;
+    ObjectData(final float[] vertexData, final short[] drawOrder, final int drawMode, final int objectId){
         this.vertexData = vertexData;
         this.drawOrder = drawOrder;
-        this.modelMatrix = modelMatrix;
+        this.drawMode = drawMode;
         this.objectId = objectId;
     }
 }
 
 class GLObject {
 
-    FloatBuffer vertexBuffer;
-    ShortBuffer drawListBuffer;
     final int glProgram;
     final int objectId;
-    static final int DIMENSIONS = 3;
+    final GLRenderer parentRenderer;
+    final int drawMode;
     static final int BYTES_PER_FLOAT = 4;
     static final int BYTES_PER_SHORT = 2;
-    int positionOffset = 0, positionValues = 3;
-    int colorOffset = positionValues, colorValues = 4;
-    int strideBytes = (positionValues+colorValues)*BYTES_PER_FLOAT;
-    float[] modelMatrix = new float[16];
-    float[] mvpMatrix = new float[16];
+    static final int positionOffset = 0, positionValues = 3;
+    static final int normalOffset = positionValues*BYTES_PER_FLOAT, normalValues = 3;
+    static final int colorOffset = (positionValues + normalValues)*BYTES_PER_FLOAT, colorValues = 4;
+    static final int strideBytes = (positionValues+normalValues+colorValues)*BYTES_PER_FLOAT;
+    final int nVertices;
+    final int[] bufferObjectHandles = new int[2];
 
     String vertexShaderCode =
             "uniform mat4 uMVPMatrix;" +
@@ -190,31 +192,40 @@ class GLObject {
     /**
      * @param vertexData Each vertex is defined by 7-adjacent values: X, Y, X, R, G, B, A
      * @param drawOrder Contains indices of vertexes in draw-order. 3 per triangle, in CCW order.
-     * @param modelMatrix Position/orientation matrix for this object. Start with an identity matrix and translate/rotate it.
      */
-    GLObject(float[] vertexData, short[] drawOrder, float[] modelMatrix, int objectId){
+    GLObject(final float[] vertexData, final short[] drawOrder, final GLRenderer parentRenderer, final int drawMode, final int objectId){
 
+        this.parentRenderer = parentRenderer;
         this.objectId = objectId;
+        this.drawMode = drawMode;
 
-        // initialize vertex byte buffer
-        vertexBuffer = ByteBuffer
+        GLES20.glGenBuffers(2, bufferObjectHandles, 0);
+
+        // initialize vertex buffer
+        FloatBuffer vertexBuffer = ByteBuffer
                 .allocateDirect(vertexData.length * BYTES_PER_FLOAT)
                 .order(ByteOrder.nativeOrder())
                 .asFloatBuffer();
         vertexBuffer.put(vertexData);
         vertexBuffer.position(0);
 
-        // initialize byte buffer for the draw list
-        if(drawOrder != null){
-            drawListBuffer = ByteBuffer
-                    .allocateDirect(drawOrder.length * BYTES_PER_SHORT)
-                    .order(ByteOrder.nativeOrder())
-                    .asShortBuffer();
-            drawListBuffer.put(drawOrder);
-            drawListBuffer.position(0);
-        }
+        //bind the VBO
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, bufferObjectHandles[0]);
+        GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, vertexBuffer.capacity()* BYTES_PER_FLOAT, vertexBuffer, GLES20.GL_STATIC_DRAW);
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0);
 
-        this.modelMatrix = modelMatrix;
+        // initialize index buffer
+        ShortBuffer drawListBuffer = ByteBuffer
+                .allocateDirect(drawOrder.length * BYTES_PER_SHORT)
+                .order(ByteOrder.nativeOrder())
+                .asShortBuffer();
+        drawListBuffer.put(drawOrder);
+        drawListBuffer.position(0);
+        nVertices = drawListBuffer.capacity();
+
+        GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, bufferObjectHandles[1]);
+        GLES20.glBufferData(GLES20.GL_ELEMENT_ARRAY_BUFFER, drawListBuffer.capacity()*BYTES_PER_SHORT, drawListBuffer, GLES20.GL_STATIC_DRAW);
+        GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, 0);
 
         //compile & load shaders
         int vertexShader = GLRenderer.loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);
@@ -229,28 +240,43 @@ class GLObject {
         return objectId;
     }
 
-    void draw(float[] vpMatrix){
+    void draw(float[] viewMatrix, float[] projectionMatrix){
         GLES20.glUseProgram(glProgram);
 
         //position info
-        int positionHandle = GLES20.glGetAttribLocation(glProgram, "aPosition");
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, bufferObjectHandles[0]);
+        final int positionHandle = GLES20.glGetAttribLocation(glProgram, "aPosition");
         GLES20.glEnableVertexAttribArray(positionHandle);
-        GLES20.glVertexAttribPointer(positionHandle, positionValues, GLES20.GL_FLOAT, false, strideBytes, vertexBuffer.position(0));
+        GLES20.glVertexAttribPointer(positionHandle, positionValues, GLES20.GL_FLOAT, false, strideBytes, 0);
+
+        //normal info
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, bufferObjectHandles[0]);
+        final int normalHandle = GLES20.glGetAttribLocation(glProgram, "aNormal");
+        GLES20.glEnableVertexAttribArray(normalHandle);
+        GLES20.glVertexAttribPointer(normalHandle, normalValues, GLES20.GL_FLOAT, false, strideBytes, normalOffset);
 
         //color info
-        int colorHandle = GLES20.glGetAttribLocation(glProgram, "aColor");
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, bufferObjectHandles[0]);// TODO: does this really need to be repeated?
+        final int colorHandle = GLES20.glGetAttribLocation(glProgram, "aColor");
         GLES20.glEnableVertexAttribArray(colorHandle);
-        GLES20.glVertexAttribPointer(colorHandle, colorValues, GLES20.GL_FLOAT, false, strideBytes, vertexBuffer.position(positionValues));
+        GLES20.glVertexAttribPointer(colorHandle, colorValues, GLES20.GL_FLOAT, false, strideBytes, colorOffset);
+
+        // Clear the vertex buffer
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0);
 
         //matrix transformations
-        int matrixHandle = GLES20.glGetUniformLocation(glProgram, "uMVPMatrix");
-        GLRenderer.checkGlError("glGetUniformLocation");
-        Matrix.multiplyMM(mvpMatrix, 0, modelMatrix, 0, vpMatrix, 0);
+        final int matrixHandle = GLES20.glGetUniformLocation(glProgram, "uMVPMatrix");
+        float[] mvpMatrix = new float[16];
+        Matrix.multiplyMM(mvpMatrix, 0, viewMatrix, 0, parentRenderer.modelMatrices.get(objectId), 0);
+        Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, mvpMatrix, 0);
         GLES20.glUniformMatrix4fv(matrixHandle, 1, false, mvpMatrix, 0);
-        GLRenderer.checkGlError("glUniformMatrix4fv");
 
+        GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, bufferObjectHandles[1]);
         //finally draw the damn thing
-        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, drawListBuffer.capacity());
-        GLES20.glDisableVertexAttribArray(positionHandle);
+        GLES20.glDrawElements(drawMode, nVertices, GLES20.GL_UNSIGNED_SHORT, 0);
+
+        //Cleanup stuff
+//        GLES20.glDisableVertexAttribArray(positionHandle);
+        GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, 0);
     }
 }
