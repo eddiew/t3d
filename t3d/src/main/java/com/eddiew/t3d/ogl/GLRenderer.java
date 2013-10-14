@@ -25,6 +25,10 @@ public class GLRenderer implements GLSurfaceView.Renderer {
     private HashMap<Integer,GLObject> glObjects = new HashMap<Integer,GLObject>();
     volatile public HashMap<Integer, float[]> modelMatrices = new HashMap<Integer, float[]>();
     volatile public ArrayList<ObjectData> rawData = new ArrayList<ObjectData>();
+    private float[] lightModelMatrix = new float[16];
+    final float[] lightPosInModelSpace = new float[] {0.0f, 0.0f, 0.0f, 1.0f};//empty because the light is centered on itself
+    final float[] lightPosInWorldSpace = new float[4];
+    final float[] lightPosInEyeSpace = new float[4];
 
     @Override
     public void onSurfaceCreated(GL10 gl10, EGLConfig eglConfig) {
@@ -72,10 +76,16 @@ public class GLRenderer implements GLSurfaceView.Renderer {
             processRawData();
             rawData.clear();
         }
-        // Redraw background color
-        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
 //        float[] vpMatrix = new float[16];
 //        Matrix.multiplyMM(vpMatrix, 0, projectionMatrix, 0, viewMatrix, 0);
+
+        Matrix.setIdentityM(lightModelMatrix,0);
+        Matrix.translateM(lightModelMatrix, 0, 0, 2, 4);
+        //Why the hell would you do the following???
+//        Matrix.rotateM(mLightModelMatrix, 0, angleInDegrees, 0.0f, 1.0f, 0.0f);
+//        Matrix.translateM(mLightModelMatrix, 0, 0.0f, 0.0f, 2.0f);
+        Matrix.multiplyMV(lightPosInWorldSpace, 0, lightModelMatrix, 0, lightPosInModelSpace, 0);
+        Matrix.multiplyMV(lightPosInEyeSpace, 0, viewMatrix, 0, lightPosInWorldSpace, 0);
 
         for(GLObject o : glObjects.values()){
             o.draw(viewMatrix, projectionMatrix);
@@ -90,46 +100,47 @@ public class GLRenderer implements GLSurfaceView.Renderer {
      */
     public static int loadShader(int type, String shaderCode){
         int shader = GLES20.glCreateShader(type);
-        if(shader == 0){
-            throw new RuntimeException("Error creating shader\n" + shaderCode);
-        }
+//        if(shader == 0){
+//            throw new RuntimeException("Error creating shader\n" + shaderCode);
+//        }
         GLES20.glShaderSource(shader,shaderCode);
         GLES20.glCompileShader(shader);
 
-        // Get the compilation status.
-        final int[] compileStatus = new int[1];
-        GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compileStatus, 0);
-
-        // If the compilation failed, delete the shader.
-        if (compileStatus[0] == 0)
-        {
-            throw new RuntimeException("Error compiling shader\n" + shaderCode);
-        }
+        // TODO: error-check toggle
+//        // Get the compilation status.
+//        final int[] compileStatus = new int[1];
+//        GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compileStatus, 0);
+//
+//        // If the compilation failed, delete the shader.
+//        if (compileStatus[0] == 0)
+//        {
+//            throw new RuntimeException("Error compiling shader\n" + shaderCode);
+//        }
 
         return shader;
     }
 
-    /**
-     * Utility method for debugging OpenGL calls. Provide the name of the call
-     * just after making it:
-     *
-     * <pre>
-     * mColorHandle = GLES20.glGetUniformLocation(mProgram, "vColor");
-     * MyGLRenderer.checkGlError("glGetUniformLocation");</pre>
-     *
-     * If the operation is not successful, the check throws an error.
-     *
-     * @param glOperation - Name of the OpenGL call to check.
-     */
-    public static void checkGlError(String glOperation) {
-        int error;
-        while ((error = GLES20.glGetError()) != GLES20.GL_NO_ERROR) {
-            Log.e("GLObject", glOperation + ": glError " + error);
-            throw new RuntimeException(glOperation + ": glError " + error);
-        }
-    }
+//    /**
+//     * Utility method for debugging OpenGL calls. Provide the name of the call
+//     * just after making it:
+//     *
+//     * <pre>
+//     * mColorHandle = GLES20.glGetUniformLocation(mProgram, "vColor");
+//     * MyGLRenderer.checkGlError("glGetUniformLocation");</pre>
+//     *
+//     * If the operation is not successful, the check throws an error.
+//     *
+//     * @param glOperation - Name of the OpenGL call to check.
+//     */
+//    public static void checkGlError(String glOperation) {
+//        int error;
+//        while ((error = GLES20.glGetError()) != GLES20.GL_NO_ERROR) {
+//            Log.e("GLObject", glOperation + ": glError " + error);
+//            throw new RuntimeException(glOperation + ": glError " + error);
+//        }
+//    }
 
-    public void addObject(final float[] vertexData, final short[] drawOrder, final int drawMode, final int objectId){
+    public void addObject(float[] vertexData, short[] drawOrder, int drawMode, int objectId){
         glObjects.put(objectId,new GLObject(vertexData,drawOrder, this, drawMode, objectId));
     }
     // This probably isn't necessary. TODO: Figure out a better way to update the world from another thread
@@ -145,11 +156,11 @@ public class GLRenderer implements GLSurfaceView.Renderer {
 }
 
 class ObjectData{
-    final float[] vertexData;
-    final short[] drawOrder;
-    final int objectId;
-    final int drawMode;
-    ObjectData(final float[] vertexData, final short[] drawOrder, final int drawMode, final int objectId){
+    float[] vertexData;
+    short[] drawOrder;
+    int objectId;
+    int drawMode;
+    ObjectData(float[] vertexData, short[] drawOrder, int drawMode, int objectId){
         this.vertexData = vertexData;
         this.drawOrder = drawOrder;
         this.drawMode = drawMode;
@@ -173,27 +184,40 @@ class GLObject {
     final int[] bufferObjectHandles = new int[2];
 
     String vertexShaderCode =
-            "uniform mat4 uMVPMatrix;" +
-                    "attribute vec4 aPosition;" +
-                    "attribute vec4 aColor;" +
-                    "varying vec4 vColor;" +
-                    "void main() {" +
-                    "   vColor = aColor;" +
-                    "   gl_Position = uMVPMatrix*aPosition;" +
-                    "}";
+        "uniform mat4 uMVPMatrix;" +
+        "uniform mat4 uMVMatrix;" +
+        "attribute vec4 aPosition;" +
+        "attribute vec4 aColor;" +
+        "attribute vec3 aNormal;" +
+        "varying vec3 vPosition;" +
+        "varying vec4 vColor;" +
+        "varying vec3 vNormal;" +
+        "void main() {" +
+            "vPosition = vec3(uMVMatrix*aPosition);" +
+            "vColor = aColor;" +
+            "vNormal = vec3(uMVMatrix*vec4(aNormal,0.0));" +
+            "gl_Position = uMVPMatrix*aPosition;" +
+        "}";
 
     String fragmentShaderCode =
-            "precision mediump float;" +
-                    "varying vec4 vColor;" +
-                    "void main() {" +
-                    "   gl_FragColor = vColor;" +
-                    "}";
+        "precision mediump float;" +
+        "uniform vec3 uLightPos;" +
+        "varying vec3 vPosition;" +
+        "varying vec4 vColor;" +
+        "varying vec3 vNormal;" +
+        "void main() {" +
+            "float dist = length(uLightPos-vPosition);" +
+            "vec3 lightVector = normalize(uLightPos-vPosition);" +
+            "float brightness = max(dot(vNormal, lightVector),0.0);" +
+            "brightness *= max(10.0/(dist*dist),0.75);" +//the 10 is the light source's strength
+            "gl_FragColor = vColor*brightness;" +
+        "}";
 
     /**
      * @param vertexData Each vertex is defined by 7-adjacent values: X, Y, X, R, G, B, A
      * @param drawOrder Contains indices of vertexes in draw-order. 3 per triangle, in CCW order.
      */
-    GLObject(final float[] vertexData, final short[] drawOrder, final GLRenderer parentRenderer, final int drawMode, final int objectId){
+    GLObject(float[] vertexData, short[] drawOrder, GLRenderer parentRenderer, int drawMode, int objectId){
 
         this.parentRenderer = parentRenderer;
         this.objectId = objectId;
@@ -264,12 +288,21 @@ class GLObject {
         // Clear the vertex buffer
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0);
 
-        //matrix transformations
-        final int matrixHandle = GLES20.glGetUniformLocation(glProgram, "uMVPMatrix");
+        //model-view Matrix
         float[] mvpMatrix = new float[16];
         Matrix.multiplyMM(mvpMatrix, 0, viewMatrix, 0, parentRenderer.modelMatrices.get(objectId), 0);
+        final int mvMatrixHandle = GLES20.glGetUniformLocation(glProgram, "uMVMatrix");
+        GLES20.glUniformMatrix4fv(mvMatrixHandle, 1, false, mvpMatrix, 0);
+
+        //model-view-projection Matrix
+        final int matrixHandle = GLES20.glGetUniformLocation(glProgram, "uMVPMatrix");
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, mvpMatrix, 0);
         GLES20.glUniformMatrix4fv(matrixHandle, 1, false, mvpMatrix, 0);
+
+        //Lighting
+        final int lightHandle = GLES20.glGetUniformLocation(glProgram, "uLightPos");
+        GLES20.glUniform3f(lightHandle, parentRenderer.lightPosInEyeSpace[0], parentRenderer.lightPosInEyeSpace[1], parentRenderer.lightPosInEyeSpace[2]);
+        //TODO: is there not a better way to accomplish the above?
 
         GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, bufferObjectHandles[1]);
         //finally draw the damn thing
